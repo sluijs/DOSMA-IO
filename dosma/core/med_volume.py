@@ -17,7 +17,7 @@ from packaging import version
 
 from dosma.core import orientation as stdo
 from dosma.core.device import Device, cpu_device, get_array_module, get_device, to_device
-from dosma.core.io.dicom_io_utils import to_RAS_affine
+from dosma.core.io.dicom_io_utils import to_RAS_affine, DatasetProxy
 from dosma.core.io.format_io import ImageDataFormat
 from dosma.defaults import SCANNER_ORIGIN_DECIMAL_PRECISION
 from dosma.utils import env
@@ -690,11 +690,11 @@ class MedicalVolume(NDArrayOperatorsMixin):
             tensor.attrs[affine_attr] = self.affine.tolist()
 
         if isinstance(headers_attr, str):
-            tensor.attrs[headers_attr] = self.headers(as_json_dict=True)
+            tensor.attrs[headers_attr] = self._headers
 
         return tensor
 
-    def headers(self, flatten=False, as_json_dict=False):
+    def headers(self, flatten=False):
         """Returns headers.
 
         If headers exist, they are currently stored as an array of
@@ -710,15 +710,19 @@ class MedicalVolume(NDArrayOperatorsMixin):
             Optional[Union[ndarray[pydicom.dataset.FileDataset], Dict]]:
                 Array of headers (if they exist).
         """
-        if flatten and self._headers is not None:
-            return self._headers.flatten()
 
-        if as_json_dict and self._headers is not None:
-            return [h.to_json_dict() for h in self._headers.flatten()]
+        if self._headers is not None:
+            headers = [pydicom.Dataset.from_json(h) for h in self._headers]
+
+            if flatten and self._headers is not None:
+                return headers.flatten()
+
+            return headers
 
         return self._headers
 
-    def get_metadata(self, key, dtype=None, default=np._NoValue):
+
+    def get_metadata(self, key, slice = None, dtype=None, default=np._NoValue):
         """Get metadata value from first header.
 
         The first header is defined as the first header in ``np.flatten(self._headers)``.
@@ -751,16 +755,21 @@ class MedicalVolume(NDArrayOperatorsMixin):
         """
         if self._headers is None:
             raise RuntimeError("No headers found. MedicalVolume must be initialized with `headers`")
-        headers = self.headers(flatten=True)
 
-        if key not in headers[0] and default != np._NoValue:
-            return default
+        if slice is None:
+            headers = self._headers.flatten()
+
+            if key not in headers[0] and default != np._NoValue:
+                return default
+            else:
+                val = headers[0][key]
+
+            if dtype is not None:
+                val = dtype(val)
+
+            return val
         else:
-            element = headers[0][key]
-        val = element.value
-        if dtype is not None:
-            val = dtype(val)
-        return val
+            raise NotImplementedError
 
     def set_metadata(self, key, value, force: bool = False):
         """Sets metadata for all headers.
@@ -779,21 +788,21 @@ class MedicalVolume(NDArrayOperatorsMixin):
                 raise ValueError(
                     "No headers found. To generate headers and write keys, `force` must be True."
                 )
-            self._headers = self._validate_and_format_headers([pydicom.Dataset()])
+            self._headers = self._validate_and_format_headers([DatasetProxy({})])
             warnings.warn(
                 "Headers were generated and may not contain all attributes "
                 "required to save the volume in DICOM format."
             )
 
         VR_registry = {float: "DS", int: "IS", str: "LS"}
-        for h in self.headers(flatten=True):
+        for h in self._headers.flatten():
             if force and key not in h:
                 try:
-                    setattr(h, key, value)
+                    h[key] = value
                 except TypeError:
                     h.add_new(key, VR_registry[type(value)], value)
             else:
-                h[key].value = value
+                h[key] = value
 
     def materialize(self):
         if not self.is_mmap:
@@ -1014,14 +1023,14 @@ class MedicalVolume(NDArrayOperatorsMixin):
             if headers_attr not in tensor.attrs:
                 raise KeyError(f"Attribute `{headers_attr}` does not exist on this zarr.Array.")
 
-            _headers = [pydicom.Dataset.from_json(h) for h in tensor.attrs.get(headers_attr)]
+            _headers = [DatasetProxy(h) for h in tensor.attrs.get(headers_attr)]
             _affine = affine if affine is not None else to_RAS_affine(_headers, default_ornt)
 
         if isinstance(affine_attr, str):
             if affine_attr not in tensor.attrs:
                 raise KeyError(f"Attribute `{headers_attr}` does not exist on this zarr.Array.")
 
-            _affine = tensor.attrs.get(affine_attr)
+            _affine = np.array(tensor.attrs.get(affine_attr)).reshape(4, 4)
 
         return cls(tensor, _affine, _headers)
 
@@ -1279,6 +1288,8 @@ class MedicalVolume(NDArrayOperatorsMixin):
         ndim = self._volume.ndim
         shape = (1,) * (ndim - len(headers.shape)) + headers.shape
         headers = np.reshape(headers, shape)
+        # headers = np.broadcast_to(headers, self._volume.shape)
+
         return headers
 
     def _extract_input_array_ufunc(self, input, device=None):

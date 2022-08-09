@@ -1,15 +1,95 @@
-from typing import List, Tuple, Sequence
+from typing import List, Tuple, Sequence, Dict, Optional, Any
+from collections.abc import MutableMapping
 
 import numpy as np
 import pydicom
+from pydicom.datadict import tag_for_keyword, dictionary_VR
+
 
 from dosma.core import orientation as stdo
 from dosma.defaults import AFFINE_DECIMAL_PRECISION, SCANNER_ORIGIN_DECIMAL_PRECISION
 
-__all__ = ["to_RAS_affine"]
+__all__ = ["to_RAS_affine", "DatasetProxy"]
 
 
-def to_RAS_affine(headers: List[pydicom.FileDataset], default_ornt: Tuple[str, str] = None):
+class DatasetProxy:
+    def __init__(self, header: Dict):
+        super().__init__()
+
+        self._dict: MutableMapping[str, Dict] = header
+
+    def _get_json_tag(self, keyword: str) -> str:
+        tag = tag_for_keyword(keyword)
+        if tag is None:
+            raise AttributeError(f"Keyword `{keyword} was not found in the data dictionary.")
+
+        json_tag = hex(tag)[2:].zfill(8)
+        if not json_tag in self._dict:
+            raise AttributeError(f"Tag `{json_tag}` was not found in this header.")
+
+        return json_tag
+
+    def _set_json_tag(self, keyword: str, value):
+        json_tag = self._get_json_tag(keyword)
+
+        vr = dictionary_VR(keyword)
+        value = value if isinstance(value, list) else [value]
+        self._dict[json_tag] = { "vr": vr, "Value": value }
+
+    def __contains__(self, keyword: str):
+        try:
+            _ = self._get_json_tag(keyword)
+            return True
+        except AttributeError:
+            return False
+
+    def __getattr__(self, keyword: str):
+        json_tag = self._get_json_tag(keyword)
+        value = self._dict[json_tag]['Value']
+
+        if isinstance(value, list):
+            if len(value) == 1:
+                return value[0]
+
+        return value
+
+    def __getitem__(self, keyword: str):
+        try:
+            return self.__getattr__(keyword)
+        except AttributeError:
+            raise KeyError
+
+    def __delitem__(self, keyword: str):
+        try:
+            json_tag = self._get_json_tag(keyword)
+            del self._dict[json_tag]
+
+        except AttributeError:
+            raise KeyError
+
+    def __iter__(self):
+        return iter(self._dict)
+
+    def __len__(self) -> int:
+        return len(self._dict)
+
+    def __setitem__(self, keyword: str, value):
+        self._set_json_tag(keyword, value)
+
+    def __array__(self):
+        return np.asarray(self._dict)
+
+    def get(self, keyword: str, value: Optional[Any] = None):
+        try:
+            return self.__getitem__(keyword)
+        except KeyError:
+            return value
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(elements={len(self)})"
+
+
+def to_RAS_affine(headers: List[DatasetProxy], default_ornt: Tuple[str, str] = None):
     """Convert from LPS+ orientation (default for DICOM) to RAS+ standardized orientation.
 
     Args:

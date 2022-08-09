@@ -31,7 +31,7 @@ from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import process_map
 
 from dosma.core import orientation as stdo
-from dosma.core.io.dicom_io_utils import to_RAS_affine
+from dosma.core.io.dicom_io_utils import DatasetProxy, to_RAS_affine
 from dosma.core.io.format_io import DataReader, DataWriter, ImageDataFormat
 from dosma.core.med_volume import MedicalVolume
 from dosma.defaults import AFFINE_DECIMAL_PRECISION, SCANNER_ORIGIN_DECIMAL_PRECISION
@@ -298,11 +298,13 @@ class DicomReader(DataReader):
             if val_groupby not in dicom_data.keys():
                 dicom_data[val_groupby] = {"headers": [], "arr": []}
 
-            dicom_data[val_groupby]["headers"].append(ds)
-            dicom_data[val_groupby]["arr"].append(ds.pixel_array)
-
             if hasattr(ds, "PixelData"):
                 delattr(ds, "PixelData")
+
+            header = DatasetProxy(ds.to_json_dict())
+            dicom_data[val_groupby]["headers"].append(header)
+            dicom_data[val_groupby]["arr"].append(ds.pixel_array)
+
 
         vols = []
         for k in sorted(dicom_data.keys()):
