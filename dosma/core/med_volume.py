@@ -656,26 +656,29 @@ class MedicalVolume(NDArrayOperatorsMixin):
         """Converts to Zarr store.
 
         Args:
-            affine_attr (str, optional): Attribute key from the Zarr Array where the affine matrix
-                is stored in.
-            headers_attr (str, optional): Attribute key to store the headers of the `MedicalVolume`
-                in. If `None`, headers will not be saved.
+            affine_attr (str, optional): Attribute key of the Zarr Array where the affine matrix
+                will be stored in. If `None`, the affine matrix will not be saved.
+            headers_attr (str, optional): Attribute key of the Zarr Array where the headers of the
+                `MedicalVolume` will be stored in. If `None`, headers will not be saved.
             mode ({'r', 'r+', 'a', 'w', 'w-'}, optional): Persistence mode: 'r' means read only
                 (must exist); 'r+' means read/write (must exist); 'a' means read/write (create if
                 doesn't exist); 'w' means create (overwrite if exists); 'w-' means create (fail if
-                exists). Default is _w-_ for safety reasons.
-            **kwargs: Additional parameters are passed through to `zarr.creation.open_array`.
+                exists). Default is **w-** to prevent inplace overwriting.
+            **kwargs: Additional parameters passed to `zarr.creation.open_array`.
 
         Returns:
             zarr.Array
 
         Examples:
-            >>> mv = MedicalVolume(np.ones((10, 20, 30)), np.eye(4))
-            >>> store = zarr.ZipStore("/path/to/store")
+            >>> mv = MedicalVolume(np.ones((10, 20, 30)), np.eye(4), headers=...)
+            >>> store = zarr.DirectoryStore("/path/to/store")
             >>> mv.to_zarr(store=store)
 
-            >>> # Save in existing store
-            >>> mv.to_zarr(store=store, path="/path/to/array")
+            >>> # Save headers to zarr attributes
+            >>> mv.to_zarr(store=store, path="/path/to/array", headers_attr="headers")
+
+            >>> # Load with headers
+            >>> dm.MedicalVolume.from_zarr(store, headers_attr="headers")
         """
 
         if not env.package_available("zarr"):
@@ -683,14 +686,14 @@ class MedicalVolume(NDArrayOperatorsMixin):
                 "zarr is not installed. Install it with `pip install zarr`. "
             )
 
-        tensor = zarr.open_array(**{**kwargs, "shape": self.shape}, mode=mode)
+        tensor = zarr.open_array(**{**kwargs, "shape": self.shape, "dtype": self.dtype}, mode=mode)
         tensor[:] = self._volume
 
         if isinstance(affine_attr, str):
             tensor.attrs[affine_attr] = self.affine.tolist()
 
         if isinstance(headers_attr, str):
-            tensor.attrs[headers_attr] = self._headers
+            tensor.attrs[headers_attr] = self.headers(as_json_dict=True)
 
         return tensor
 
@@ -722,7 +725,7 @@ class MedicalVolume(NDArrayOperatorsMixin):
         return self._headers
 
 
-    def get_metadata(self, key, slice = None, dtype=None, default=np._NoValue):
+    def get_metadata(self, key, slice=None, dtype=None, default=np._NoValue):
         """Get metadata value from first header.
 
         The first header is defined as the first header in ``np.flatten(self._headers)``.
