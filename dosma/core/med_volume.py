@@ -675,7 +675,7 @@ class MedicalVolume(NDArrayOperatorsMixin):
             >>> mv.to_zarr(store=store)
 
             >>> # Save headers to zarr attributes
-            >>> mv.to_zarr(store=store, path="/path/to/array", headers_attr="headers")
+            >>> mv.to_zarr(store=store, headers_attr="headers")
 
             >>> # Load with headers
             >>> dm.MedicalVolume.from_zarr(store, headers_attr="headers")
@@ -693,7 +693,7 @@ class MedicalVolume(NDArrayOperatorsMixin):
             tensor.attrs[affine_attr] = self.affine.tolist()
 
         if isinstance(headers_attr, str):
-            tensor.attrs[headers_attr] = self.headers(as_json_dict=True)
+            tensor.attrs[headers_attr] = self._headers.flatten().tolist()
 
         return tensor
 
