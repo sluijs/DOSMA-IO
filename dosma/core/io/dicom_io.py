@@ -81,7 +81,7 @@ class DicomReader(DataReader):
         self,
         num_workers: int = 0,
         verbose: bool = False,
-        group_by: Union[str, int, Sequence[Union[str, int]]] = "EchoNumbers",
+        group_by: Union[str, int, Sequence[Union[str, int]]] = None,
         sort_by: Union[str, int, Sequence[Union[str, int]]] = None,
         ignore_ext: bool = False,
         default_ornt: Tuple[str, str] = None,
@@ -298,13 +298,12 @@ class DicomReader(DataReader):
             if val_groupby not in dicom_data.keys():
                 dicom_data[val_groupby] = {"headers": [], "arr": []}
 
-            if hasattr(ds, "PixelData"):
-                delattr(ds, "PixelData")
-
             header = DatasetProxy(ds.to_json_dict())
             dicom_data[val_groupby]["headers"].append(header)
             dicom_data[val_groupby]["arr"].append(ds.pixel_array)
 
+            if hasattr(ds, "PixelData"):
+                delattr(ds, "PixelData")
 
         vols = []
         for k in sorted(dicom_data.keys()):
