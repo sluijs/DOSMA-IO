@@ -298,12 +298,13 @@ class DicomReader(DataReader):
             if val_groupby not in dicom_data.keys():
                 dicom_data[val_groupby] = {"headers": [], "arr": []}
 
-            header = DatasetProxy(ds.to_json_dict())
-            dicom_data[val_groupby]["headers"].append(header)
-            dicom_data[val_groupby]["arr"].append(ds.pixel_array)
-
+            pixel_array = ds.pixel_array
             if hasattr(ds, "PixelData"):
                 delattr(ds, "PixelData")
+
+            header = DatasetProxy(ds.to_json_dict())
+            dicom_data[val_groupby]["headers"].append(header)
+            dicom_data[val_groupby]["arr"].append(pixel_array)
 
         vols = []
         for k in sorted(dicom_data.keys()):
