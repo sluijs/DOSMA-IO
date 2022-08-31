@@ -1018,24 +1018,24 @@ class MedicalVolume(NDArrayOperatorsMixin):
                 "zarr is not installed. Install it with `pip install zarr`. "
             )
 
-        tensor = zarr.open_array(store, mode, **kwargs)
+        arr = zarr.open_array(store, mode, **kwargs)
         _affine = affine if affine is not None else np.eye(4)
         _headers = None
 
         if isinstance(headers_attr, str):
-            if headers_attr not in tensor.attrs:
+            if headers_attr not in arr.attrs:
                 raise KeyError(f"Attribute `{headers_attr}` does not exist on this zarr.Array.")
 
-            _headers = [DatasetProxy(h) for h in tensor.attrs.get(headers_attr)]
+            _headers = [DatasetProxy(h) for h in arr.attrs.get(headers_attr)]
             _affine = affine if affine is not None else to_RAS_affine(_headers, default_ornt)
 
         if isinstance(affine_attr, str):
-            if affine_attr not in tensor.attrs:
+            if affine_attr not in arr.attrs:
                 raise KeyError(f"Attribute `{headers_attr}` does not exist on this zarr.Array.")
 
-            _affine = np.array(tensor.attrs.get(affine_attr)).reshape(4, 4)
+            _affine = np.array(arr.attrs.get(affine_attr)).reshape(4, 4)
 
-        return cls(tensor, _affine, _headers)
+        return cls(arr, _affine, _headers)
 
     @classmethod
     def from_nib(
