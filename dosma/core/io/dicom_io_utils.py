@@ -13,12 +13,20 @@ __all__ = ["to_RAS_affine", "DatasetProxy"]
 
 
 class DatasetProxy:
+    """Performant implementation of the pydicom.FileDataset metadata interface.
+
+    Args:
+        header (Dict): Header in DICOM+JSON format.
+    """
+
     def __init__(self, header: Dict):
         super().__init__()
 
         self._dict: MutableMapping[str, Dict] = header
 
     def _get_json_tag(self, keyword: str) -> str:
+        """Convert a DICOM tag's keyword to its corresponding hex value."""
+
         tag = tag_for_keyword(keyword)
         if tag is None:
             raise AttributeError(f"Keyword `{keyword} was not found in the data dictionary.")
@@ -30,6 +38,8 @@ class DatasetProxy:
         return json_tag
 
     def _set_json_tag(self, keyword: str, value):
+        """Set the value of a DICOM tag."""
+
         json_tag = self._get_json_tag(keyword)
 
         vr = dictionary_VR(keyword)
