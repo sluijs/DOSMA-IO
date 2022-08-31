@@ -715,12 +715,12 @@ class MedicalVolume(NDArrayOperatorsMixin):
         """
 
         if self._headers is not None:
-            headers = [pydicom.Dataset.from_json(h) for h in self._headers]
+            headers = np.array([pydicom.Dataset.from_json(h._dict) for h in self._headers.flatten()])
 
-            if flatten and self._headers is not None:
-                return headers.flatten()
+            if flatten:
+                return headers
 
-            return headers
+            return headers.reshape(self._headers.shape)
 
         return self._headers
 
