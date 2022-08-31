@@ -686,16 +686,17 @@ class MedicalVolume(NDArrayOperatorsMixin):
                 "zarr is not installed. Install it with `pip install zarr`. "
             )
 
-        tensor = zarr.open_array(**{**kwargs, "shape": self.shape, "dtype": self.dtype}, mode=mode)
-        tensor[:] = self._volume
+        arr = zarr.open_array(**{**kwargs, "shape": self.shape, "dtype": self.dtype}, mode=mode)
+        arr[:] = self._volume
 
         if isinstance(affine_attr, str):
-            tensor.attrs[affine_attr] = self.affine.tolist()
+            arr.attrs[affine_attr] = self.affine.tolist()
 
         if isinstance(headers_attr, str):
-            tensor.attrs[headers_attr] = self._headers.flatten().tolist()
+            arr.attrs[headers_attr] = [h._dict for h in self._headers.flatten().tolist()]
 
-        return tensor
+        arr.read_only = True
+        return arr
 
     def headers(self, flatten=False):
         """Returns headers.
