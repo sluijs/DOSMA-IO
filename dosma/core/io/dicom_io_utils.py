@@ -13,7 +13,7 @@ __all__ = ["to_RAS_affine", "DatasetProxy"]
 
 
 class DatasetProxy:
-    """Performant implementation of the pydicom.FileDataset metadata interface.
+    """Performant (20x faster) partial implementation of the pydicom.FileDataset metadata interface.
 
     Args:
         header (Dict): Header in DICOM+JSON format.
