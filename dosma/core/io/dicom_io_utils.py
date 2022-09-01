@@ -101,7 +101,6 @@ def decompress_header(compressed_header: Dict) -> List[Dict]:
 
         for i in range(n_headers):
             idx = 0 if len(value) == 1 else i
-            print(value[idx])
             headers[i][key] = { "vr": vr, "Value": value[idx]}
 
     return headers
