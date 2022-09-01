@@ -17,7 +17,7 @@ from packaging import version
 
 from dosma.core import orientation as stdo
 from dosma.core.device import Device, cpu_device, get_array_module, get_device, to_device
-from dosma.core.io.dicom_io_utils import to_RAS_affine, DatasetProxy
+from dosma.core.io.dicom_io_utils import to_RAS_affine, DatasetProxy, compress_headers, decompress_header
 from dosma.core.io.format_io import ImageDataFormat
 from dosma.defaults import SCANNER_ORIGIN_DECIMAL_PRECISION
 from dosma.utils import env
@@ -650,6 +650,7 @@ class MedicalVolume(NDArrayOperatorsMixin):
         self,
         affine_attr: Optional[str] = None,
         headers_attr: Optional[str] = None,
+        header_compressor: Optional[str] = None,
         mode: str = "w-",
         **kwargs,
     ):
@@ -660,6 +661,8 @@ class MedicalVolume(NDArrayOperatorsMixin):
                 will be stored in. If `None`, the affine matrix will not be saved.
             headers_attr (str, optional): Attribute key of the Zarr Array where the headers of the
                 `MedicalVolume` will be stored in. If `None`, headers will not be saved.
+            header_compressor (str, optional): Header compression algorithm to be applied to the
+                DICOM+JSON headers. Currently, only `tlc` is supported.
             mode ({'r', 'r+', 'a', 'w', 'w-'}, optional): Persistence mode: 'r' means read only
                 (must exist); 'r+' means read/write (must exist); 'a' means read/write (create if
                 doesn't exist); 'w' means create (overwrite if exists); 'w-' means create (fail if
@@ -693,7 +696,11 @@ class MedicalVolume(NDArrayOperatorsMixin):
             arr.attrs[affine_attr] = self.affine.tolist()
 
         if isinstance(headers_attr, str):
-            arr.attrs[headers_attr] = [h._dict for h in self._headers.flatten().tolist()]
+            json_headers = [h._dict for h in self._headers.flatten().tolist()]
+            if header_compressor == "tlc":
+                arr.attrs[headers_attr] = compress_headers(json_headers)
+            else:
+                arr.attrs[headers_attr] = json_headers
 
         arr.read_only = True
         return arr
@@ -1011,7 +1018,7 @@ class MedicalVolume(NDArrayOperatorsMixin):
             >>> import zarr
             >>> store = zarr.ZipStore('/path/to/store')
             >>> zarr.save_array(store, np.zeros((10, 10)))
-            >>> MedicalVolume.from_zarr(store, headers_attr=None)
+            >>> MedicalVolume.from_zarr(store)
         """
 
         if not env.package_available("zarr"):
@@ -1021,14 +1028,18 @@ class MedicalVolume(NDArrayOperatorsMixin):
 
         arr = zarr.open_array(store, mode, **kwargs)
         _affine = affine if affine is not None else np.eye(4)
-        _headers = None
+        headers = None
 
         if isinstance(headers_attr, str):
-            if headers_attr not in arr.attrs:
+            zarr_header = arr.attrs.get(headers_attr, None)
+            if zarr_header is None:
                 raise KeyError(f"Attribute `{headers_attr}` does not exist on this zarr.Array.")
 
-            _headers = [DatasetProxy(h) for h in arr.attrs.get(headers_attr)]
-            _affine = affine if affine is not None else to_RAS_affine(_headers, default_ornt)
+            if isinstance(zarr_header, dict):
+                zarr_header = decompress_header(zarr_header)
+
+            headers = [DatasetProxy(h) for h in zarr_header]
+            _affine = affine if affine is not None else to_RAS_affine(headers, default_ornt)
 
         if isinstance(affine_attr, str):
             if affine_attr not in arr.attrs:
@@ -1036,7 +1047,7 @@ class MedicalVolume(NDArrayOperatorsMixin):
 
             _affine = np.array(arr.attrs.get(affine_attr)).reshape(4, 4)
 
-        return cls(arr, _affine, _headers)
+        return cls(arr, _affine, headers)
 
     @classmethod
     def from_nib(

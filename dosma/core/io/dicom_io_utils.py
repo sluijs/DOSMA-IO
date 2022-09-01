@@ -1,19 +1,119 @@
 from typing import List, Tuple, Sequence, Dict, Optional, Any
 from collections.abc import MutableMapping
+import json
 
 import numpy as np
 import pydicom
 from pydicom.datadict import tag_for_keyword, dictionary_VR
 
-
 from dosma.core import orientation as stdo
 from dosma.defaults import AFFINE_DECIMAL_PRECISION, SCANNER_ORIGIN_DECIMAL_PRECISION
 
-__all__ = ["to_RAS_affine", "DatasetProxy"]
+__all__ = ["to_RAS_affine", "DatasetProxy", "compress_headers", "decompress_header"]
+
+
+def _concat_headers(headers: List[Dict]):
+    out = {}
+
+    for header in headers:
+        for key in header:
+            # remove empty tags and inline binaries
+            if not "Value" in header.get(key):
+                continue
+
+            # essential elements
+            vr = header.get(key).get("vr")
+            value = header.get(key).get("Value")
+
+            # create a new tag in the compressed header
+            if not key in out:
+                out[key] = { "vr": vr, "Value": [] }
+
+            # add the value to the tag in the compressed header
+            out[key]["Value"].append(value)
+
+    return out
+
+
+def _compress_value(value: List):
+    val = np.array([json.dumps(v) for v in value], dtype="object")
+
+    if np.all(val == val[0]):
+        return [value[0]]
+
+    return value
+
+
+def compress_headers(headers: List[dict]):
+    """Top-level header compression: a compression algorithm for DICOM+JSON headers.
+
+    A utility function to compress top-level attributes from a list of DICOM+JSON headers. Only top-
+    level attributes are compressed, as sequences are arrays with undetermined order in JSON.
+
+    NB: attributes without "Value" properties are not preserved (eg, empty items, inlineBinary),
+    making this a lossy compression algorithm.
+
+    Args:
+        headers (List[Dict]): Headers in DICOM+JSON format.
+
+    Returns:
+        Dict: a compressed representation of a list of DICOM+JSON headers.
+    """
+    out = _concat_headers(headers)
+
+    for key in out:
+        out[key]["Value"] = _compress_value(out[key]["Value"])
+
+    out["__compressor__"] = "tlc"
+    out["__len__"] = len(headers)
+
+    return out
+
+
+def _decompress_value(value: List, repeats: int):
+    if len(value) == 1:
+        return value * repeats
+
+    return value
+
+
+def decompress_header(header: Dict):
+    """Decompress a top-level compressed header into a list of DICOM+JSON headers.
+
+    Args:
+        header (Dict): top-level compressed header.
+
+    Returns:
+        headers (Lists[Dict]): Headers in DICOM+JSON format.
+    """
+
+    # create empty headers
+    n_headers = header.get("__len__")
+    headers = [{}] * n_headers
+
+    for key in header:
+        if key in ["__len__", "__compressor__"]:
+            continue
+
+        # essential elements
+        vr = header.get(key).get("vr")
+        value = header.get(key).get("Value")
+        values = _decompress_value(value, n_headers)
+
+        for (out, value) in zip(headers, values):
+            out[key] = { "vr": vr, "Value": value }
+
+    return headers
 
 
 class DatasetProxy:
-    """Performant (20x faster) partial implementation of the pydicom.FileDataset metadata interface.
+    """Performant partial implementation of the pydicom.FileDataset metadata interface.
+
+    This class is a wrapper around a DICOM+JSON dict that acts as pydicom.FileDataset. It supports
+    accessing attributes by DICOM keywords.
+
+    Example:
+    >>> DatasetProxy(dicom_json_header).RescaleIntercept
 
     Args:
         header (Dict): Header in DICOM+JSON format.
@@ -24,23 +124,23 @@ class DatasetProxy:
 
         self._dict: MutableMapping[str, Dict] = header
 
-    def _get_json_tag(self, keyword: str) -> str:
+    def _format_json_tag(self, keyword: str) -> str:
         """Convert a DICOM tag's keyword to its corresponding hex value."""
 
         tag = tag_for_keyword(keyword)
         if tag is None:
             raise AttributeError(f"Keyword `{keyword} was not found in the data dictionary.")
 
-        json_tag = hex(tag)[2:].zfill(8)
+        json_tag = hex(tag)[2:].zfill(8).upper()
         if not json_tag in self._dict:
             raise AttributeError(f"Tag `{json_tag}` was not found in this header.")
 
         return json_tag
 
     def _set_json_tag(self, keyword: str, value):
-        """Set the value of a DICOM tag."""
+        """Set the value of a DICOM+JSON tag."""
 
-        json_tag = self._get_json_tag(keyword)
+        json_tag = self._format_json_tag(keyword)
 
         vr = dictionary_VR(keyword)
         value = value if isinstance(value, list) else [value]
@@ -48,13 +148,13 @@ class DatasetProxy:
 
     def __contains__(self, keyword: str):
         try:
-            _ = self._get_json_tag(keyword)
+            _ = self._format_json_tag(keyword)
             return True
         except AttributeError:
             return False
 
     def __getattr__(self, keyword: str):
-        json_tag = self._get_json_tag(keyword)
+        json_tag = self._format_json_tag(keyword)
         value = self._dict[json_tag]['Value']
 
         if isinstance(value, list):
@@ -71,7 +171,7 @@ class DatasetProxy:
 
     def __delitem__(self, keyword: str):
         try:
-            json_tag = self._get_json_tag(keyword)
+            json_tag = self._format_json_tag(keyword)
             del self._dict[json_tag]
 
         except AttributeError:
