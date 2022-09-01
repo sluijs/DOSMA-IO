@@ -77,31 +77,32 @@ def _decompress_value(value: List, repeats: int):
     return value
 
 
-def decompress_header(header: Dict):
+def decompress_header(compressed_header: Dict) -> List[Dict]:
     """Decompress a top-level compressed header into a list of DICOM+JSON headers.
 
     Args:
-        header (Dict): top-level compressed header.
+        compressed_header (Dict): top-level compressed header.
 
     Returns:
         headers (Lists[Dict]): Headers in DICOM+JSON format.
     """
 
     # create empty headers
-    n_headers = header.get("__len__")
-    headers = [{}] * n_headers
+    n_headers = compressed_header.get("__len__")
+    headers = [{} for _ in range(n_headers)]
 
-    for key in header:
+    for key in compressed_header:
         if key in ["__len__", "__compressor__"]:
             continue
 
         # essential elements
-        vr = header.get(key).get("vr")
-        value = header.get(key).get("Value")
-        values = _decompress_value(value, n_headers)
+        vr = compressed_header.get(key).get("vr")
+        value = compressed_header.get(key).get("Value")
 
-        for (out, value) in zip(headers, values):
-            out[key] = { "vr": vr, "Value": value }
+        for i in range(n_headers):
+            idx = 0 if len(value) == 1 else i
+            print(value[idx])
+            headers[i][key] = { "vr": vr, "Value": value[idx]}
 
     return headers
 
