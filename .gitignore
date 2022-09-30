@@ -55,3 +55,7 @@ docs/source/generated
 # coverage files
 .coverage
 coverage.xml
+
+# dev folders
+data/
+notebooks/
