@@ -12,7 +12,14 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Collection, Dict, Union
 
-__all__ = ["ImageDataFormat", "DataReader", "DataWriter", "SUPPORTED_VISUALIZATION_FORMATS"]
+from dosma.core.io.http_io_utils import is_url
+
+__all__ = [
+    "ImageDataFormat",
+    "DataReader",
+    "DataWriter",
+    "SUPPORTED_VISUALIZATION_FORMATS",
+]
 
 SUPPORTED_VISUALIZATION_FORMATS = (
     "png",
@@ -34,6 +41,7 @@ class ImageDataFormat(enum.Enum):
 
     nifti = 1, ("nii", "nii.gz")
     dicom = 2, ("dcm", "ima", "dic")
+    http = 3, ()
 
     def __new__(cls, key_code, extensions):
         """
@@ -78,6 +86,9 @@ class ImageDataFormat(enum.Enum):
         Raises:
             ValueError: If no compatible ImageDataFormat found.
         """
+        if is_url(file_or_dir_path):
+            return ImageDataFormat.http
+
         for im_data_format in cls:
             if im_data_format.is_filetype(file_or_dir_path):
                 return im_data_format
@@ -87,7 +98,7 @@ class ImageDataFormat(enum.Enum):
         # We cannot check if the path is a directory path because it may not
         # have been created yet.
         file_or_dir_path = str(file_or_dir_path)
-        filename_base, ext = os.path.splitext(file_or_dir_path)
+        filename_base, _ = os.path.splitext(file_or_dir_path)
         if filename_base == file_or_dir_path:
             return ImageDataFormat.dicom
 

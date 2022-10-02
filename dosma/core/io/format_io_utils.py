@@ -8,6 +8,7 @@ from typing import List, Union
 from dosma.core.io.dicom_io import DicomReader, DicomWriter
 from dosma.core.io.format_io import DataReader, DataWriter, ImageDataFormat
 from dosma.core.io.nifti_io import NiftiReader, NiftiWriter
+from dosma.core.io.http_io import HttpReader
 from dosma.core.med_volume import MedicalVolume
 
 __all__ = [
@@ -20,8 +21,16 @@ __all__ = [
     "generic_load",
 ]
 
-_READERS = {ImageDataFormat.dicom: DicomReader, ImageDataFormat.nifti: NiftiReader}
-_WRITERS = {ImageDataFormat.dicom: DicomWriter, ImageDataFormat.nifti: NiftiWriter}
+_READERS = {
+    ImageDataFormat.dicom: DicomReader,
+    ImageDataFormat.nifti: NiftiReader,
+    ImageDataFormat.http: HttpReader,
+}
+
+_WRITERS = {
+    ImageDataFormat.dicom: DicomWriter,
+    ImageDataFormat.nifti: NiftiWriter,
+}
 
 
 def get_reader(data_format: ImageDataFormat) -> DataReader:
@@ -181,6 +190,7 @@ def read(
         >>> dm.read("/path/to/ct/dicom/folder")
         >>> dm.read("/path/to/ct/nifti/file.nii.gz", mmap=True)
     """
+
     if data_format is None:
         data_format = ImageDataFormat.get_image_data_format(path)
     elif isinstance(data_format, str):
