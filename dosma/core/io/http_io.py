@@ -142,7 +142,6 @@ class HttpReader(DataReader):
             # multipart/related
             if content_type.startswith("multipart/related;"):
                 _, *content_info = [part.strip() for part in content_type.split(";")]
-
                 parts = self._read_multipart_stream(res, content_info, pbar)
                 return self._read_dicom(parts, **kwargs)
 
@@ -151,7 +150,6 @@ class HttpReader(DataReader):
                 blob = self._read_stream(res, pbar)
                 z = zipfile.ZipFile(BytesIO(blob))
                 parts = [z.read(zinfo) for zinfo in z.infolist() if zinfo.file_size > 0]
-
                 return self._read_dicom(parts, **kwargs)
 
             # fallback to single file
